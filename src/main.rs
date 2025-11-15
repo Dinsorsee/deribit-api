@@ -1,9 +1,12 @@
 use reqwest::{self};
 use anyhow::Result;
 use dotenv::dotenv;
+use std::env;
 
 async fn get_request() -> Result<()>{
-    let response = reqwest::get("https://test.deribit.com/api/v2").await?;
+    dotenv().ok();
+
+    let response = reqwest::get(env::var("URL").expect("URL Not found")).await?;
     println!("{}", response.status());
 
     let response_body = response.text().await?;
