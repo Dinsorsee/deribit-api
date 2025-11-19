@@ -4,14 +4,14 @@ use reqwest::{self};
 use reqwest::{StatusCode, Url};
 use std::env;
 
-pub async fn get_access_token() -> Result<()> {
+pub async fn get_access_token(url: &str) -> Result<()> {
     dotenv().ok();
 
     let client = reqwest::Client::builder().build()?;
     let client_id = env::var("CLIENT_ID")?;
     let client_secret = env::var("CLIENT_SECRET")?;
-    let url = Url::parse_with_params(
-        &(env::var("URL").expect("URL Not found") + "/public/auth"),
+    let full_url = Url::parse_with_params(
+        &(url.to_owned() + "/public/auth"),
         &[
             ("grant_type", "client_credentials"),
             ("client_id", &client_id),
@@ -19,7 +19,7 @@ pub async fn get_access_token() -> Result<()> {
         ],
     )?;
 
-    let response = client.get(url).send().await?;
+    let response = client.get(full_url).send().await?;
     match response.status() {
         StatusCode::OK => {
             println!(
