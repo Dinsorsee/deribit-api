@@ -3,5 +3,5 @@
     "editor.formatOnSave": true,
     "editor.defaultFormatter": "rust-lang.rust-analyzer"
   },
-  "cSpell.words": ["deribit", "dotenv", "reqwest"]
+  "cSpell.words": ["deribit"]
 }
