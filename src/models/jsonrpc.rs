@@ -13,7 +13,6 @@ pub struct JSONRPCRequest<Q: Request> {
 #[serde(rename_all = "camelCase")]
 pub struct JSONRPCResponse<R> {
     pub jsonrpc: JSONRPCVersion,
-    pub id: i64,
     pub testnet: bool,
     #[serde(alias = "error")]
     pub result: Either<R, ErrorDetail>,
