@@ -1,10 +1,11 @@
+use super::models::auth::AuthResponse;
+use crate::models::jsonrpc::JSONRPCResponse;
 use anyhow::Result;
 use dotenv::dotenv;
-use reqwest::{self};
-use reqwest::{StatusCode, Url};
+use reqwest::{self, Url};
 use std::env;
 
-pub async fn get_access_token(url: &str) -> Result<()> {
+pub async fn get_token(url: &str) -> Result<()> {
     dotenv().ok();
 
     let client = reqwest::Client::builder().build()?;
@@ -19,22 +20,19 @@ pub async fn get_access_token(url: &str) -> Result<()> {
         ],
     )?;
 
-    let response = client.get(full_url).send().await?;
-    match response.status() {
-        StatusCode::OK => {
-            println!(
-                "Status code: {} - ✅ Connection Completed",
-                response.status()
-            )
-        }
-        StatusCode::NOT_FOUND => {
-            println!("Status code: {} - ❌ Connection failed", response.status())
-        }
-        _ => {
-            println!("Status code: {} ❌ ", response.status())
-        }
-    }
-    let response_body = response.text().await?;
-    println!("\n{:#?}", response_body);
+    let response = client
+        .get(full_url.clone())
+        .send()
+        .await?
+        .json::<JSONRPCResponse<AuthResponse>>()
+        .await?;
+
+    let response_body = match response.result.clone().left() {
+        Some(_) => response.result.left().unwrap(),
+        None => panic!("Panic!"),
+    };
+
+    println!("\naccess_token: {:#?}", response_body.access_token()?);
+    println!("\nrefresh_token: {:#?}", response_body.refresh_token()?);
     Ok(())
 }

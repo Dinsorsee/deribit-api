@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod jsonrpc;
 
 use serde::{Deserialize, Serialize};
