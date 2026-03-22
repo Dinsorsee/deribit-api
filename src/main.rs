@@ -1,6 +1,6 @@
 use anyhow::Result;
-use deribit_api::auth::get_token;
 use deribit_api::config::config_loader;
+use deribit_api::{auth::get_token, get_index_price::get_index_price};
 use tracing::{error, info};
 
 #[tokio::main]
@@ -20,5 +20,6 @@ async fn main() -> Result<()> {
     info!("Loaded ENV config: success");
 
     get_token(&dotenvy_env.deribit_api.url).await?;
+    get_index_price(&dotenvy_env.deribit_api.url).await?;
     Ok(())
 }
