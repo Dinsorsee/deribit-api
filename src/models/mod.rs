@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod index_price;
 pub mod jsonrpc;
 
 use serde::{Deserialize, Serialize};

@@ -1,16 +1,15 @@
-use super::models::auth::AuthResponse;
+use super::models::auth::RawAuthResponse;
 use crate::models::jsonrpc::JSONRPCResponse;
 use anyhow::Result;
-use dotenv::dotenv;
 use reqwest::{self, Url};
 use std::env;
 
 pub async fn get_token(url: &str) -> Result<()> {
-    dotenv().ok();
-
-    let client = reqwest::Client::builder().build()?;
     let client_id = env::var("CLIENT_ID")?;
     let client_secret = env::var("CLIENT_SECRET")?;
+
+    let client = reqwest::Client::builder().build()?;
+
     let full_url = Url::parse_with_params(
         &(url.to_owned() + "/public/auth"),
         &[
@@ -24,15 +23,21 @@ pub async fn get_token(url: &str) -> Result<()> {
         .get(full_url.clone())
         .send()
         .await?
-        .json::<JSONRPCResponse<AuthResponse>>()
+        .json::<JSONRPCResponse<RawAuthResponse>>()
         .await?;
 
-    let response_body = match response.result.clone().left() {
-        Some(_) => response.result.left().unwrap(),
-        None => panic!("Panic!"),
-    };
+    let response_body = response
+        .result
+        .left_result()
+        .map_err(|e| anyhow::anyhow!("API error: {:?}", e))?;
 
-    println!("\naccess_token: {:#?}", response_body.access_token()?);
-    println!("\nrefresh_token: {:#?}", response_body.refresh_token()?);
+    let access_token = response_body
+        .access_token
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("missing access_token"))?;
+
+    println!("\naccess_token: {:#?}", access_token);
+    println!("\nrefresh_token: {:#?}", response_body.refresh_token);
+
     Ok(())
 }
