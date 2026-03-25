@@ -1,5 +1,5 @@
 use super::models::auth::RawAuthResponse;
-use crate::models::jsonrpc::JSONRPCResponse;
+use crate::models::jsonrpc::JsonRpcResponse;
 use anyhow::Result;
 use reqwest::{self, Url};
 use std::env;
@@ -19,25 +19,12 @@ pub async fn get_token(url: &str) -> Result<()> {
         ],
     )?;
 
-    let response = client
-        .get(full_url.clone())
-        .send()
-        .await?
-        .json::<JSONRPCResponse<RawAuthResponse>>()
-        .await?;
+    let response = client.get(full_url).send().await?;
+    let raw = response.json::<JsonRpcResponse<RawAuthResponse>>().await?;
 
-    let response_body = response
-        .result
-        .left_result()
-        .map_err(|e| anyhow::anyhow!("API error: {:?}", e))?;
+    let auth = raw.into_result().map_err(|e| anyhow::anyhow!("{}", e))?;
 
-    let access_token = response_body
-        .access_token
-        .clone()
-        .ok_or_else(|| anyhow::anyhow!("missing access_token"))?;
-
-    println!("\naccess_token: {:#?}", access_token);
-    println!("\nrefresh_token: {:#?}", response_body.refresh_token);
-
+    println!("\naccess_token: {:#?}", auth.access_token);
+    println!("\nrefresh_token: {:#?}", auth.refresh_token);
     Ok(())
 }
