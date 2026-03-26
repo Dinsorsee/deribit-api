@@ -1,5 +1,5 @@
 use crate::models::index_price::{CurrencyPair, RawIndexPriceResponse};
-use crate::models::jsonrpc::JSONRPCResponse;
+use crate::models::jsonrpc::JsonRpcResponse;
 use anyhow::Result;
 use reqwest::{self, Url};
 
@@ -11,24 +11,17 @@ pub async fn get_index_price(url: &str) -> Result<()> {
         &[("index_name", pair.as_api_str())],
     )?;
 
-    let response = client
-        .get(full_url.clone())
-        .send()
-        .await?
-        .json::<JSONRPCResponse<RawIndexPriceResponse>>()
+    let response = client.get(full_url).send().await?;
+    let raw = response
+        .json::<JsonRpcResponse<RawIndexPriceResponse>>()
         .await?;
-    println!("{:?}", response);
 
-    let response_body = response
-        .result
-        .left_result()
-        .map_err(|e| anyhow::anyhow!("API error: {:?}", e))?;
+    let index = raw.into_result().map_err(|e| anyhow::anyhow!("{}", e))?;
 
-    println!("{}", full_url);
-    println!("EDP: {}", response_body.edp);
-
-    if let Some(price) = response_body.price_for(pair.as_api_str()) {
-        println!("Index Price ({}): {}", pair.as_api_str(), price)
-    }
+    println!(
+        "\n{}: {}",
+        pair.as_api_str(),
+        index.estimated_delivery_price
+    );
     Ok(())
 }
