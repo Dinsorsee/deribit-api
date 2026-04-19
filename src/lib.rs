@@ -1,4 +1,5 @@
-pub mod auth;
+pub mod application;
 pub mod config;
-pub mod get_index_price;
-pub mod models;
+pub mod domain;
+pub mod infrastructure;
+pub mod interface;

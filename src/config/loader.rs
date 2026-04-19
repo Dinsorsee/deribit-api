@@ -1,4 +1,4 @@
-use super::config_model::{DeribitApi, DotEnvyConfig};
+use super::model::{DeribitApi, DotEnvyConfig};
 use anyhow::Result;
 
 pub fn load() -> Result<DotEnvyConfig> {

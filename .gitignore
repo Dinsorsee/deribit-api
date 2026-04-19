@@ -3,3 +3,8 @@
 build.txt
 .github
 .runbook/
+/vault
+/vault/systems
+/vault/decisions
+/vault/status
+/vault/concepts
