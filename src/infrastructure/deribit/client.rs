@@ -1,6 +1,7 @@
 use super::models::auth::RawAuthResponse;
-use super::models::index_price::{CurrencyPair, RawIndexPriceResponse};
+use super::models::index_price::RawIndexPriceResponse;
 use super::models::jsonrpc::JsonRpcResponse;
+use crate::domain::models::market::CurrencyPair;
 use anyhow::Result;
 use reqwest::{self, Url};
 use std::env;
