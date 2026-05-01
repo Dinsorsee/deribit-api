@@ -1,5 +1,6 @@
 use crate::domain::error::DomainError;
 
+#[derive(Clone)]
 pub struct AuthToken {
     access_token: String,
     refresh_token: String,

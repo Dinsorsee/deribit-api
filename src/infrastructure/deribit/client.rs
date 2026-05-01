@@ -1,10 +1,88 @@
 use super::models::auth::RawAuthResponse;
 use super::models::index_price::RawIndexPriceResponse;
 use super::models::jsonrpc::JsonRpcResponse;
-use crate::domain::models::market::CurrencyPair;
+use crate::domain::error::DomainError;
+use crate::domain::models::market::IndexPrice;
+use crate::domain::models::{auth::AuthToken, market::CurrencyPair};
+use crate::domain::ports::exchange::ExchangePort;
 use anyhow::Result;
+use async_trait::async_trait;
 use reqwest::{self, Url};
 use std::env;
+use tokio;
+
+pub struct DeribitClient {
+    http: reqwest::Client,
+    base_url: String,
+    client_id: String,
+    client_secret: String,
+    token: tokio::sync::RwLock<Option<AuthToken>>,
+}
+
+impl DeribitClient {
+    pub fn new(base_url: String, client_id: String, client_secret: String) -> Self {
+        let http = reqwest::Client::builder()
+            .build()
+            .expect("failed to build http client");
+        Self {
+            http,
+            base_url,
+            client_id,
+            client_secret,
+            token: tokio::sync::RwLock::new(None),
+        }
+    }
+
+    pub async fn authenticate(&self) -> Result<AuthToken, DomainError> {
+        let full_url = Url::parse_with_params(
+            &format!("{}/public/auth", self.base_url),
+            &[
+                ("grant_type", "client_credentials"),
+                ("client_id", &self.client_id),
+                ("client_secret", &self.client_secret),
+            ],
+        )
+        .map_err(|e| DomainError::ConfigError {
+            message: e.to_string(),
+        })?;
+
+        let response =
+            self.http
+                .get(full_url)
+                .send()
+                .await
+                .map_err(|e| DomainError::AuthFailed {
+                    message: e.to_string(),
+                })?;
+        let raw = response
+            .json::<JsonRpcResponse<RawAuthResponse>>()
+            .await
+            .map_err(|e| DomainError::AuthFailed {
+                message: e.to_string(),
+            })?;
+
+        let auth = raw.into_result().map_err(|e| DomainError::ApiError {
+            code: e.code,
+            message: e.message,
+        })?;
+
+        let token = AuthToken::new(auth.access_token, auth.refresh_token, auth.expires_in)?;
+
+        *self.token.write().await = Some(token.clone());
+        Ok(token)
+    }
+}
+
+#[async_trait]
+impl ExchangePort for DeribitClient {
+    async fn authenticate(&self) -> Result<AuthToken, DomainError> {
+        self.authenticate().await
+    }
+
+    async fn get_index_price(&self, pair: CurrencyPair) -> Result<IndexPrice, DomainError> {
+        self.get_index_price(pair).await
+    }
+}
 
 pub async fn get_token(url: &str) -> Result<()> {
     let client_id = env::var("CLIENT_ID")?;
