@@ -54,6 +54,7 @@ impl DeribitClient {
                 .map_err(|e| DomainError::AuthFailed {
                     message: e.to_string(),
                 })?;
+
         let raw = response
             .json::<JsonRpcResponse<RawAuthResponse>>()
             .await
@@ -70,6 +71,45 @@ impl DeribitClient {
 
         *self.token.write().await = Some(token.clone());
         Ok(token)
+    }
+
+    pub async fn get_index_price(&self, pair: CurrencyPair) -> Result<IndexPrice, DomainError> {
+        let full_url = Url::parse_with_params(
+            &format!("{}/public/get_index_price", self.base_url),
+            &[("index_name", pair.as_api_str())],
+        )
+        .map_err(|e| DomainError::ConfigError {
+            message: e.to_string(),
+        })?;
+
+        let response =
+            self.http
+                .get(full_url)
+                .send()
+                .await
+                .map_err(|e| DomainError::ExchangeUnavailable {
+                    message: e.to_string(),
+                })?;
+
+        let raw = response
+            .json::<JsonRpcResponse<RawIndexPriceResponse>>()
+            .await
+            .map_err(|e| DomainError::ExchangeUnavailable {
+                message: format!("Failed to parse response: {}", e),
+            })?;
+
+        let raw_index_price = raw.into_result().map_err(|e| DomainError::ApiError {
+            code: e.code,
+            message: e.message,
+        })?;
+
+        let index_price = IndexPrice::new(
+            pair,
+            raw_index_price.index_price,
+            raw_index_price.estimated_delivery_price,
+        );
+
+        Ok(index_price)
     }
 }
 

@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum DomainError {
     #[error("Authentication failed: {message}")]
     AuthFailed { message: String },
+    #[error("Failed to communicate with exchange: {message}")]
+    ExchangeUnavailable { message: String },
     #[error("Api error (code {code}): {message}")]
     ApiError { code: i64, message: String },
     #[error("Token is missing")]
