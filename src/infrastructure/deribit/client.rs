@@ -8,8 +8,8 @@ use crate::domain::ports::exchange::ExchangePort;
 use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::{self, Url};
-use std::env;
 use tokio;
+use tracing::{debug, info};
 
 pub struct DeribitClient {
     http: reqwest::Client,
@@ -34,6 +34,8 @@ impl DeribitClient {
     }
 
     pub async fn authenticate(&self) -> Result<AuthToken, DomainError> {
+        info!("Authenticating to Deribit...");
+
         let full_url = Url::parse_with_params(
             &format!("{}/public/auth", self.base_url),
             &[
@@ -70,10 +72,17 @@ impl DeribitClient {
         let token = AuthToken::new(auth.access_token, auth.refresh_token, auth.expires_in)?;
 
         *self.token.write().await = Some(token.clone());
+
+        debug!(
+            "Successfully authenticated. Token expires in {} seconds",
+            token.expires_in()
+        );
         Ok(token)
     }
 
     pub async fn get_index_price(&self, pair: CurrencyPair) -> Result<IndexPrice, DomainError> {
+        info!("Fetching index price for {}", pair.as_api_str());
+
         let full_url = Url::parse_with_params(
             &format!("{}/public/get_index_price", self.base_url),
             &[("index_name", pair.as_api_str())],
@@ -109,6 +118,11 @@ impl DeribitClient {
             raw_index_price.estimated_delivery_price,
         );
 
+        debug!(
+            "Received index price for {}: {}",
+            pair.as_api_str(),
+            index_price.price()
+        );
         Ok(index_price)
     }
 }
@@ -122,52 +136,4 @@ impl ExchangePort for DeribitClient {
     async fn get_index_price(&self, pair: CurrencyPair) -> Result<IndexPrice, DomainError> {
         self.get_index_price(pair).await
     }
-}
-
-pub async fn get_token(url: &str) -> Result<()> {
-    let client_id = env::var("CLIENT_ID")?;
-    let client_secret = env::var("CLIENT_SECRET")?;
-
-    let client = reqwest::Client::builder().build()?;
-
-    let full_url = Url::parse_with_params(
-        &(url.to_owned() + "/public/auth"),
-        &[
-            ("grant_type", "client_credentials"),
-            ("client_id", &client_id),
-            ("client_secret", &client_secret),
-        ],
-    )?;
-
-    let response = client.get(full_url).send().await?;
-    let raw = response.json::<JsonRpcResponse<RawAuthResponse>>().await?;
-
-    let auth = raw.into_result().map_err(|e| anyhow::anyhow!("{}", e))?;
-
-    println!("\naccess_token: {:#?}", auth.access_token);
-    println!("\nrefresh_token: {:#?}", auth.refresh_token);
-    Ok(())
-}
-
-pub async fn get_index_price(url: &str) -> Result<()> {
-    let client = reqwest::Client::builder().build()?;
-    let pair = CurrencyPair::BtcUsdt;
-    let full_url = Url::parse_with_params(
-        &(url.to_owned() + "/public/get_index_price"),
-        &[("index_name", pair.as_api_str())],
-    )?;
-
-    let response = client.get(full_url).send().await?;
-    let raw = response
-        .json::<JsonRpcResponse<RawIndexPriceResponse>>()
-        .await?;
-
-    let index = raw.into_result().map_err(|e| anyhow::anyhow!("{}", e))?;
-
-    println!(
-        "\n{}: {}",
-        pair.as_api_str(),
-        index.estimated_delivery_price
-    );
-    Ok(())
 }

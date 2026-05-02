@@ -1,12 +1,17 @@
-use super::model::{DeribitApi, DotEnvyConfig};
+use super::model::{AppConfig, DeribitConfig};
 use anyhow::Result;
+use dotenvy::dotenv;
+use std::env;
 
-pub fn load() -> Result<DotEnvyConfig> {
-    dotenvy::dotenv().ok();
+pub fn load() -> Result<AppConfig> {
+    dotenv().ok();
 
-    let deribit_api = DeribitApi {
-        url: std::env::var("URL").expect("URL is invalid"),
+    let deribit = DeribitConfig {
+        url: env::var("URL").expect("missing required env variable: URL"),
+        client_id: env::var("CLIENT_ID").expect("missing required env variable: CLIENT_ID"),
+        client_secret: env::var("CLIENT_SECRET")
+            .expect("missing required env variable: CLIENT_SECRET"),
     };
 
-    Ok(DotEnvyConfig { deribit_api })
+    Ok(AppConfig { deribit })
 }
