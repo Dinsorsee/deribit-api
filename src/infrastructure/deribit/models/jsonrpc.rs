@@ -1,6 +1,25 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+#[derive(Serialize)]
+pub struct JsonRpcRequest<P: Serialize> {
+    pub jsonrpc: &'static str,
+    pub id: u64,
+    pub method: String,
+    pub params: P,
+}
+
+impl<P: Serialize> JsonRpcRequest<P> {
+    pub fn new(id: u64, method: impl Into<String>, params: P) -> Self {
+        Self {
+            jsonrpc: "2.0",
+            id,
+            method: method.into(),
+            params,
+        }
+    }
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct JsonRpcResponse<T> {
