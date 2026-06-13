@@ -13,9 +13,9 @@ use std::collections::HashMap;
 use std::sync::{atomic::AtomicU64, Arc};
 use tokio::net::TcpStream;
 use tokio::sync::{oneshot, Mutex, RwLock};
-use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::tungstenite::{self, Message};
 use tokio_tungstenite::{connect_async, MaybeTlsStream, WebSocketStream};
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 pub struct DeribitClient {
     ws_sink: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>>,
@@ -43,13 +43,17 @@ impl DeribitClient {
         let (sink, stream) = ws.split();
         let ws_sink: Arc<Mutex<SplitSink<WebSocketStream<MaybeTlsStream<TcpStream>>, Message>>> =
             Arc::new(Mutex::new(sink));
+
         let pending: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>> =
             Arc::new(Mutex::new(HashMap::new()));
+
         let next_id: Arc<AtomicU64> = Arc::new(AtomicU64::new(1));
+
         let token: Arc<RwLock<Option<AuthToken>>> = Arc::new(RwLock::new(None));
 
-        // TODO: spawn the background reader task (using the stream<SplitStream> above)
-        // pass Arc::clone(&pending) and Arc::clone(&ws_sink) into it
+        Self::spawn_reader(Arc::clone(&pending), stream);
+
+        info!("WebSocket connection established");
 
         Ok(Self {
             ws_sink,
@@ -59,6 +63,42 @@ impl DeribitClient {
             client_id,
             client_secret,
         })
+    }
+
+    fn spawn_reader(
+        pending: Arc<Mutex<HashMap<u64, oneshot::Sender<serde_json::Value>>>>,
+        mut stream: impl StreamExt<Item = Result<Message, tungstenite::Error>> + Send + 'static + Unpin,
+    ) {
+        tokio::spawn(async move {
+            while let Some(msg) = stream.next().await {
+                match msg {
+                    Ok(Message::Text(text)) => {
+                        match serde_json::from_str::<serde_json::Value>(&text) {
+                            Ok(value) => {
+                                if let Some(id) = value["id"].as_u64() {
+                                    let mut map = pending.lock().await;
+                                    if let Some(sender) = map.remove(&id) {
+                                        let _ = sender.send(value);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse incoming WebSocket message: {}", e)
+                            }
+                        }
+                    }
+                    Ok(Message::Close(_)) => {
+                        warn!("WebSocket connection closed by server");
+                        break;
+                    }
+                    Err(e) => {
+                        warn!("WebSocket read error: {}", e);
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+        });
     }
 
     pub fn new(base_url: String, client_id: String, client_secret: String) -> Self {
