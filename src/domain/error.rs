@@ -20,4 +20,6 @@ pub enum DomainError {
     DatabaseError { message: String },
     #[error("Missing or invalid environment variable: {message}")]
     ConfigError { message: String },
+    #[error("the connection to the exchange failed: {message}")]
+    ConnectionError { message: String },
 }
