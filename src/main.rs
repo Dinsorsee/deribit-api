@@ -23,7 +23,7 @@ async fn main() -> Result<()> {
     let client_id = app_config.deribit.client_id;
     let client_secret = app_config.deribit.client_secret;
 
-    let client = DeribitClient::new(url, client_id, client_secret);
+    let client = DeribitClient::connect(&url, client_id, client_secret).await?;
     let pair = CurrencyPair::BtcUsdt;
 
     client.authenticate().await?;

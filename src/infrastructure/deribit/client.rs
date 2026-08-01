@@ -5,12 +5,13 @@ use crate::domain::error::DomainError;
 use crate::domain::models::market::IndexPrice;
 use crate::domain::models::{auth::AuthToken, market::CurrencyPair};
 use crate::domain::ports::exchange::ExchangePort;
+use crate::infrastructure::deribit::models::jsonrpc::JsonRpcRequest;
 use anyhow::Result;
 use async_trait::async_trait;
 use futures_util::stream::{SplitSink, StreamExt};
-use reqwest::{self, Url};
+use futures_util::SinkExt;
 use std::collections::HashMap;
-use std::sync::{atomic::AtomicU64, Arc};
+use std::sync::{atomic::AtomicU64, atomic::Ordering, Arc};
 use tokio::net::TcpStream;
 use tokio::sync::{oneshot, Mutex, RwLock};
 use tokio_tungstenite::tungstenite::{self, Message};
@@ -101,113 +102,117 @@ impl DeribitClient {
         });
     }
 
-    pub fn new(base_url: String, client_id: String, client_secret: String) -> Self {
-        // let http = reqwest::Client::builder()
-        //     .build()
-        //     .expect("failed to build http client");
-        // Self {
-        //     http,
-        //     base_url,
-        //     client_id,
-        //     client_secret,
-        //     token: tokio::sync::RwLock::new(None),
-        // }
-        todo!()
+    async fn send_request<P, R>(&self, method: &str, params: P) -> Result<R, DomainError>
+    where
+        P: serde::Serialize,
+        R: serde::de::DeserializeOwned,
+    {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let request = JsonRpcRequest::new(id, method, params);
+
+        // A serialisation failure is a malformed-request problem at the exchange
+        // boundary — ExchangeUnavailable, NOT ConfigError (that variant is for
+        // missing/invalid environment config;
+        let json = serde_json::to_string(&request).map_err(|e| DomainError::ConfigError {
+            message: format!("failed to serialise request: {}", e),
+        })?;
+
+        let (tx, rx) = oneshot::channel::<serde_json::Value>();
+        {
+            let mut map = self.pending.lock().await;
+            map.insert(id, tx);
+        };
+
+        let send_result = {
+            let mut sink = self.ws_sink.lock().await;
+            sink.send(Message::Text(json)).await
+        };
+
+        if let Err(e) = send_result {
+            self.pending.lock().await.remove(&id);
+            return Err(DomainError::ExchangeUnavailable {
+                message: e.to_string(),
+            });
+        }
+
+        let value = rx.await.map_err(|_| DomainError::ExchangeUnavailable {
+            message: "response channel closed before reply arrived".to_string(),
+        })?;
+
+        let response: JsonRpcResponse<R> =
+            serde_json::from_value(value).map_err(|e| DomainError::ExchangeUnavailable {
+                message: format!("failed to parse response: {}", e),
+            })?;
+
+        response.into_result().map_err(|e| DomainError::ApiError {
+            code: e.code,
+            message: e.message,
+        })
     }
 
     pub async fn authenticate(&self) -> Result<AuthToken, DomainError> {
         info!("Authenticating to Deribit...");
 
-        // let full_url = Url::parse_with_params(
-        //     &format!("{}/public/auth", self.base_url),
-        //     &[
-        //         ("grant_type", "client_credentials"),
-        //         ("client_id", &self.client_id),
-        //         ("client_secret", &self.client_secret),
-        //     ],
-        // )
-        // .map_err(|e| DomainError::ConfigError {
-        //     message: e.to_string(),
-        // })?;
+        #[derive(serde::Serialize)]
+        struct AuthParams<'a> {
+            grant_type: &'a str,
+            client_id: &'a str,
+            client_secret: &'a str,
+        }
 
-        // let response =
-        //     self.http
-        //         .get(full_url)
-        //         .send()
-        //         .await
-        //         .map_err(|e| DomainError::AuthFailed {
-        //             message: e.to_string(),
-        //         })?;
+        let raw = self
+            .send_request::<AuthParams, RawAuthResponse>(
+                "public/auth",
+                AuthParams {
+                    grant_type: "client_credentials",
+                    client_id: &self.client_id,
+                    client_secret: &self.client_secret,
+                },
+            )
+            .await?;
 
-        // let raw = response
-        //     .json::<JsonRpcResponse<RawAuthResponse>>()
-        //     .await
-        //     .map_err(|e| DomainError::AuthFailed {
-        //         message: e.to_string(),
-        //     })?;
+        let token = AuthToken::new(raw.access_token, raw.refresh_token, raw.expires_in)?;
 
-        // let auth = raw.into_result().map_err(|e| DomainError::ApiError {
-        //     code: e.code,
-        //     message: e.message,
-        // })?;
+        *self.token.write().await = Some(token.clone());
 
-        // let token = AuthToken::new(auth.access_token, auth.refresh_token, auth.expires_in)?;
-
-        // *self.token.write().await = Some(token.clone());
-
-        // debug!(
-        //     "Successfully authenticated. Token expires in {} seconds",
-        //     token.expires_in()
-        // );
-        // Ok(token)
-        todo!()
+        debug!(
+            "Successfully authenticated. Token expires in {} hours",
+            token.expires_in() / (60 * 60)
+        );
+        Ok(token)
     }
 
     pub async fn get_index_price(&self, pair: CurrencyPair) -> Result<IndexPrice, DomainError> {
         info!("Fetching index price for {}", pair.as_api_str());
 
-        // let full_url = Url::parse_with_params(
-        //     &format!("{}/public/get_index_price", self.base_url),
-        //     &[("index_name", pair.as_api_str())],
-        // )
-        // .map_err(|e| DomainError::ConfigError {
-        //     message: e.to_string(),
-        // })?;
+        #[derive(serde::Serialize)]
+        struct IndexPriceParams<'a> {
+            index_name: &'a str,
+        }
 
-        // let response =
-        //     self.http
-        //         .get(full_url)
-        //         .send()
-        //         .await
-        //         .map_err(|e| DomainError::ExchangeUnavailable {
-        //             message: e.to_string(),
-        //         })?;
+        let raw = self
+            .send_request::<IndexPriceParams, RawIndexPriceResponse>(
+                "public/get_index_price",
+                IndexPriceParams {
+                    index_name: pair.as_api_str(),
+                },
+            )
+            .await?;
 
-        // let raw = response
-        //     .json::<JsonRpcResponse<RawIndexPriceResponse>>()
-        //     .await
-        //     .map_err(|e| DomainError::ExchangeUnavailable {
-        //         message: format!("Failed to parse response: {}", e),
-        //     })?;
+        let price = IndexPrice::new(pair, raw.index_price, raw.estimated_delivery_price);
+        debug!(
+            "Received index price for {}: {}",
+            pair.as_api_str(),
+            price.price()
+        );
+        Ok(price)
+    }
 
-        // let raw_index_price = raw.into_result().map_err(|e| DomainError::ApiError {
-        //     code: e.code,
-        //     message: e.message,
-        // })?;
-
-        // let index_price = IndexPrice::new(
-        //     pair,
-        //     raw_index_price.index_price,
-        //     raw_index_price.estimated_delivery_price,
-        // );
-
-        // debug!(
-        //     "Received index price for {}: {}",
-        //     pair.as_api_str(),
-        //     index_price.price()
-        // );
-        // Ok(index_price)
-        todo!()
+    async fn ensure_authenticated(&self) -> Result<(), DomainError> {
+        if self.token.read().await.is_none() {
+            return Err(DomainError::NotAuthenticated);
+        }
+        Ok(())
     }
 }
 
