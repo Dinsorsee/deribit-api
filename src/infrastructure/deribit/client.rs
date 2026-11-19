@@ -2,9 +2,11 @@ use super::models::auth::RawAuthResponse;
 use super::models::index_price::RawIndexPriceResponse;
 use super::models::jsonrpc::JsonRpcResponse;
 use crate::domain::error::DomainError;
+use crate::domain::models::account::AccountSummary;
 use crate::domain::models::market::IndexPrice;
 use crate::domain::models::{auth::AuthToken, market::CurrencyPair};
 use crate::domain::ports::exchange::ExchangePort;
+use crate::infrastructure::deribit::models::account::RawAccountSummaryResponse;
 use crate::infrastructure::deribit::models::jsonrpc::JsonRpcRequest;
 use anyhow::Result;
 use async_trait::async_trait;
@@ -208,6 +210,33 @@ impl DeribitClient {
         Ok(price)
     }
 
+    pub async fn get_account_summary(&self, currency: &str) -> Result<AccountSummary, DomainError> {
+        info!("Get account summary for {}", currency);
+        self.ensure_authenticated().await?;
+
+        #[derive(serde::Serialize)]
+        struct AccountParams<'a> {
+            currency: &'a str,
+        }
+
+        let raw = self
+            .send_request::<AccountParams, RawAccountSummaryResponse>(
+                "private/get_account_summary",
+                AccountParams { currency },
+            )
+            .await?;
+        let account =
+            AccountSummary::new(raw.currency, raw.balance, raw.available_funds, raw.equity);
+        debug!(
+            "{} balance: {}\n available_funds: {}\n equity: {}",
+            account.currency(),
+            account.balance(),
+            account.available_funds(),
+            account.equity()
+        );
+        Ok(account)
+    }
+
     async fn ensure_authenticated(&self) -> Result<(), DomainError> {
         if self.token.read().await.is_none() {
             return Err(DomainError::NotAuthenticated);
@@ -224,5 +253,9 @@ impl ExchangePort for DeribitClient {
 
     async fn get_index_price(&self, pair: CurrencyPair) -> Result<IndexPrice, DomainError> {
         self.get_index_price(pair).await
+    }
+
+    async fn get_account_summary(&self, currency: &str) -> Result<AccountSummary, DomainError> {
+        self.get_account_summary(currency).await
     }
 }
