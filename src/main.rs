@@ -28,5 +28,6 @@ async fn main() -> Result<()> {
 
     client.authenticate().await?;
     client.get_index_price(pair).await?;
+    client.get_account_summary("BTC").await?;
     Ok(())
 }
