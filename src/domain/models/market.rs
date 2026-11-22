@@ -12,7 +12,7 @@ impl CurrencyPair {
 
     pub fn instrument_name(&self) -> &'static str {
         match self {
-            CurrencyPair::BtcUsdt => "BTC-PERPETUAL",
+            CurrencyPair::BtcUsdt => "BTC_USDT",
         }
     }
 }
