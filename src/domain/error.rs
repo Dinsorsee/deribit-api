@@ -22,4 +22,6 @@ pub enum DomainError {
     ConfigError { message: String },
     #[error("the connection to the exchange failed: {message}")]
     ConnectionError { message: String },
+    #[error("Order amount must be finite and greater than zero")]
+    InvalidOrderAmount,
 }
